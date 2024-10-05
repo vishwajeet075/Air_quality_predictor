@@ -1,0 +1,1 @@
+This is the backend which handles request for visualization in the frontend and the lstm model to predict air quality of pune.
