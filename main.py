@@ -3,6 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+
+
+from fastapi.responses import FileResponse
+from apscheduler.schedulers.background import BackgroundScheduler
+from tasks.data_fetcher import fetch_and_save_data
+import os
+
+
 import pandas as pd
 from utils.graph_utils import (
     generate_boxplot,
@@ -18,7 +26,7 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -60,6 +68,42 @@ async def generate_graph(request: GraphRequest):
         raise HTTPException(status_code=400, detail="Invalid graph type")
 
     return {"image": image_base64}
+
+
+# Initialize the scheduler
+scheduler = BackgroundScheduler()
+
+# Schedule the task to run every day at noon
+#scheduler.add_job(fetch_and_save_data, 'cron', hour=12)
+#scheduler.start()
+scheduler.add_job(fetch_and_save_data, 'interval', minutes=2)
+scheduler.start()
+
+
+@app.on_event("startup")
+def startup_event():
+    # Start the scheduler when the app starts
+    if not scheduler.running:
+        scheduler.start()
+
+@app.on_event("shutdown")
+def shutdown_event():
+    # Shut down the scheduler when the app stops
+    scheduler.shutdown()
+
+@app.get("/")
+async def root():
+    return {"message": "Welcome to the Air Quality Data API"}
+
+@app.get("/data")
+async def get_data():
+    csv_path = "data/punepollution.csv"
+    if os.path.exists(csv_path):
+        return FileResponse(csv_path, media_type='text/csv', filename="data/Pune_hist_pollution_data_30_sep_24.csv")
+    else:
+        return {"error": "CSV file not found"}
+    
+
 
 if __name__ == "__main__":
     import uvicorn
