@@ -2,6 +2,7 @@
 import requests
 import pandas as pd
 import datetime
+import os 
 
 def get_hist_data(lat, lon, start, end, api_key):
     response = requests.get(
@@ -35,7 +36,7 @@ def process_data(data):
 def fetch_and_save_data():
     lat = 18.5204  # Pune coordinates
     lon = 73.8567
-    api_key = "b117f05cbf7133c20380710a8ad5a06d"
+    api_key = os.getenv("Api_key")
     
     # Set the start date to 24 hours before the current date
     end_date = datetime.datetime.now()
