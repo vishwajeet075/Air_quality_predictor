@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException , File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -69,7 +69,7 @@ async def generate_graph(request: GraphRequest):
 
     return {"image": image_base64}
 
-
+'''
 # Initialize the scheduler
 scheduler = BackgroundScheduler()
 
@@ -90,21 +90,29 @@ def startup_event():
 def shutdown_event():
     # Shut down the scheduler when the app stops
     scheduler.shutdown()
-
+'''
 @app.get("/")
 async def root():
     return {"message": "Welcome to the Air Quality Data API"}
 
 @app.get("/data")
 async def get_data():
-    csv_path = "data/punepollution.csv"
+    csv_path = "data/Pune_hist_pollution_data_30_sep_24.csv"
     if os.path.exists(csv_path):
         return FileResponse(csv_path, media_type='text/csv', filename="data/Pune_hist_pollution_data_30_sep_24.csv")
     else:
         return {"error": "CSV file not found"}
     
 
+@app.post("/upload_model")
+async def upload_model(model: bytes = File(...)):
+    model_path = "models/model.joblib"
+    with open(model_path, "wb") as model_file:
+        model_file.write(model)
+    return {"message": "Model uploaded successfully"}
+
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))  # Use 8000 for local, or $PORT for Render
+    uvicorn.run(app, host="0.0.0.0", port=port)

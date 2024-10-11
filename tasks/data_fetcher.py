@@ -38,16 +38,12 @@ def fetch_and_save_data():
     api_key = "b117f05cbf7133c20380710a8ad5a06d"
     
     # Set the start date to 24 hours before the current date
-    #end_date = datetime.datetime.now()
-    #start_date = end_date - datetime.timedelta(days=1)
-    
-    #start = int(start_date.timestamp())
-    #end = int(end_date.timestamp())
-
-    start_date = datetime.datetime(2024, 10, 1) #historical pollution data is available from this date
     end_date = datetime.datetime.now()
+    start_date = end_date - datetime.timedelta(days=1)
+    
     start = int(start_date.timestamp())
     end = int(end_date.timestamp())
+
     
     historical_data = get_hist_data(lat, lon, start, end, api_key)
     
