@@ -8,3 +8,4 @@ apscheduler==3.10.4
 python-multipart==0.0.12
 matplotlib==3.9.2
 seaborn==0.13.2
+joblib==1.2.0

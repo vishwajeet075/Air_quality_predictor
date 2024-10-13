@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException , File
+from fastapi import FastAPI, HTTPException , File , UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional , List
 from datetime import datetime
+import joblib
 
 
 from fastapi.responses import FileResponse
@@ -68,6 +69,108 @@ async def generate_graph(request: GraphRequest):
         raise HTTPException(status_code=400, detail="Invalid graph type")
 
     return {"image": image_base64}
+
+
+
+# Load the model
+model_path = "models/model.joblib"
+model = joblib.load(model_path)
+
+class PredictionRequest(BaseModel):
+    year: int
+    month: int
+    day: int
+    hour: int
+    pm10: float
+    no2: float
+    so2: float
+    co: float
+    no: float
+    o3: float
+    nh3: float
+
+class PredictionResponse(BaseModel):
+    pm2_5: float
+
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(request: PredictionRequest):
+    try:
+        # Create a DataFrame from the input data
+        input_data = pd.DataFrame([request.dict()])
+        
+        # Make prediction
+        prediction = model.predict(input_data)
+        
+        return PredictionResponse(pm2_5=float(prediction[0]))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+# Load the model
+model_path = "models/model.joblib"
+model = joblib.load(model_path)
+
+class PredictionRequest(BaseModel):
+    year: int
+    month: int
+    day: int
+    hour: int
+    pm10: float
+    no2: float
+    so2: float
+    co: float
+    no: float
+    o3: float
+    nh3: float
+
+class PredictionResponse(BaseModel):
+    pm2_5: float
+
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(request: PredictionRequest):
+    try:
+        # Create a DataFrame from the input data
+        input_data = pd.DataFrame([request.dict()])
+        
+        # Make prediction
+        prediction = model.predict(input_data)
+        
+        return PredictionResponse(pm2_5=float(prediction[0]))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+
+
+# Load the model
+model_path = "models/model.joblib"
+model = joblib.load(model_path)
+
+class PredictionRequest(BaseModel):
+    year: int
+    month: int
+    day: int
+    hour: int
+    pm10: float
+    no2: float
+    so2: float
+    co: float
+    no: float
+    o3: float
+    nh3: float
+
+class PredictionResponse(BaseModel):
+    pm2_5: float
+
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(request: PredictionRequest):
+    try:
+        # Create a DataFrame from the input data
+        input_data = pd.DataFrame([request.dict()])
+        
+        # Make prediction
+        prediction = model.predict(input_data)
+        
+        return PredictionResponse(pm2_5=float(prediction[0]))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+
 
 '''
 # Initialize the scheduler
