@@ -138,9 +138,9 @@ async def predict(request: PredictionRequest):
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
 
-# Load the model
+# Define the model and the path to the model file
 model_path = "models/model.joblib"
-model = joblib.load(model_path)
+model = None
 
 class PredictionRequest(BaseModel):
     year: int
@@ -160,17 +160,30 @@ class PredictionResponse(BaseModel):
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(request: PredictionRequest):
+    global model
+
+    # Load the model dynamically if not already loaded
+    if model is None:
+        if os.path.exists(model_path):
+            try:
+                model = joblib.load(model_path)
+                print("Model loaded successfully.")
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
+        else:
+            # Return a 503 error if the model is not yet available
+            raise HTTPException(status_code=503, detail="Model is not available yet. Please try again later.")
+    
     try:
         # Create a DataFrame from the input data
         input_data = pd.DataFrame([request.dict()])
         
-        # Make prediction
+        # Make a prediction
         prediction = model.predict(input_data)
         
         return PredictionResponse(pm2_5=float(prediction[0]))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
-
 
 '''
 # Initialize the scheduler
@@ -208,10 +221,21 @@ async def get_data():
     
 
 @app.post("/upload_model")
-async def upload_model(model: bytes = File(...)):
+async def upload_model(model: UploadFile = File(...)):
     model_path = "models/model.joblib"
-    with open(model_path, "wb") as model_file:
-        model_file.write(model)
+    
+    # Check if the uploaded file has the correct filename
+    if model.filename != "trained_model.joblib":
+        return JSONResponse(status_code=422, content={"message": "Invalid file name. Please upload 'trained_model.joblib'."})
+
+    # Save the uploaded model file
+    try:
+        with open(model_path, "wb") as model_file:
+            content = await model.read()  # Read the content of the uploaded file
+            model_file.write(content)  # Write content to the specified path
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"message": f"Error saving model: {str(e)}"})
+    
     return {"message": "Model uploaded successfully"}
 
 
