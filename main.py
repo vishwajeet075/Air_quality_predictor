@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Optional , List
 from datetime import datetime
 import joblib
+import logging
 
 
 from fastapi.responses import FileResponse
@@ -27,7 +28,7 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://glittering-lily-92e49b.netlify.app"],
+    allow_origins=["https://glittering-lily-92e49b.netlify.app","http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -72,71 +73,9 @@ async def generate_graph(request: GraphRequest):
 
 
 
-# Load the model
-model_path = "models/model.joblib"
-model = joblib.load(model_path)
-
-class PredictionRequest(BaseModel):
-    year: int
-    month: int
-    day: int
-    hour: int
-    pm10: float
-    no2: float
-    so2: float
-    co: float
-    no: float
-    o3: float
-    nh3: float
-
-class PredictionResponse(BaseModel):
-    pm2_5: float
-
-@app.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest):
-    try:
-        # Create a DataFrame from the input data
-        input_data = pd.DataFrame([request.dict()])
-        
-        # Make prediction
-        prediction = model.predict(input_data)
-        
-        return PredictionResponse(pm2_5=float(prediction[0]))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
-# Load the model
-model_path = "models/model.joblib"
-model = joblib.load(model_path)
-
-class PredictionRequest(BaseModel):
-    year: int
-    month: int
-    day: int
-    hour: int
-    pm10: float
-    no2: float
-    so2: float
-    co: float
-    no: float
-    o3: float
-    nh3: float
-
-class PredictionResponse(BaseModel):
-    pm2_5: float
-
-@app.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest):
-    try:
-        # Create a DataFrame from the input data
-        input_data = pd.DataFrame([request.dict()])
-        
-        # Make prediction
-        prediction = model.predict(input_data)
-        
-        return PredictionResponse(pm2_5=float(prediction[0]))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
-
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Define the model and the path to the model file
 model_path = "models/model.joblib"
@@ -162,28 +101,36 @@ class PredictionResponse(BaseModel):
 async def predict(request: PredictionRequest):
     global model
 
-    # Load the model dynamically if not already loaded
-    if model is None:
-        if os.path.exists(model_path):
-            try:
-                model = joblib.load(model_path)
-                print("Model loaded successfully.")
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
-        else:
-            # Return a 503 error if the model is not yet available
-            raise HTTPException(status_code=503, detail="Model is not available yet. Please try again later.")
-    
     try:
+      
+
+        # Load the model dynamically if not already loaded
+        if model is None:
+            if os.path.exists(model_path):
+                try:
+                    model = joblib.load(model_path)
+                    
+                except Exception as e:
+                    logger.error("Failed to load model: %s", str(e))
+                    raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
+            else:
+                logger.error("Model file not found at path: %s", model_path)
+                raise HTTPException(status_code=503, detail="Model is not available yet. Please try again later.")
+        
         # Create a DataFrame from the input data
         input_data = pd.DataFrame([request.dict()])
-        
+    
+
         # Make a prediction
         prediction = model.predict(input_data)
         
+
         return PredictionResponse(pm2_5=float(prediction[0]))
+
     except Exception as e:
+        logger.error("Prediction error: %s", str(e))
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+
 
 '''
 # Initialize the scheduler
