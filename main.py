@@ -5,6 +5,12 @@ from typing import Optional , List
 from datetime import datetime
 import joblib
 import logging
+import torch
+from sklearn.preprocessing import MinMaxScaler
+import numpy as np
+import matplotlib.pyplot as plt
+import io
+import base64
 
 
 from fastapi.responses import FileResponse
@@ -77,59 +83,103 @@ async def generate_graph(request: GraphRequest):
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Define the model and the path to the model file
-model_path = "models/model.joblib"
+# Path to the model file
+model_path = "models/lstm_aqi_model.pth"
 model = None
 
-class PredictionRequest(BaseModel):
-    year: int
-    month: int
-    day: int
-    hour: int
-    pm10: float
-    no2: float
-    so2: float
-    co: float
-    no: float
-    o3: float
-    nh3: float
+# Initialize device and scaler
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+scaler = MinMaxScaler()
 
-class PredictionResponse(BaseModel):
-    pm2_5: float
+# Define the model structure (same as during training)
+class LSTMAQIModel(torch.nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, output_size):
+        super(LSTMAQIModel, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm = torch.nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = torch.nn.Linear(hidden_size, output_size)
 
-@app.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest):
+    def forward(self, x):
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+        out, _ = self.lstm(x, (h0, c0))
+        out = self.fc(out[:, -1, :])
+        return out
+
+# Function to load the model if not already loaded
+def load_model():
     global model
+    if model is None:
+        if os.path.exists(model_path):
+            try:
+                model = LSTMAQIModel(input_size=1, hidden_size=64, num_layers=2, output_size=1)
+                model.load_state_dict(torch.load(model_path))
+                model.to(device)
+                model.eval()
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
+        else:
+            raise HTTPException(status_code=503, detail="Model is not available yet.")
 
+# Endpoint to predict AQI for the next 7 days
+@app.post("/predict")
+async def predict_next_7_days():
     try:
-      
+        # Load the model
+        load_model()
 
-        # Load the model dynamically if not already loaded
-        if model is None:
-            if os.path.exists(model_path):
-                try:
-                    model = joblib.load(model_path)
-                    
-                except Exception as e:
-                    logger.error("Failed to load model: %s", str(e))
-                    raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
-            else:
-                logger.error("Model file not found at path: %s", model_path)
-                raise HTTPException(status_code=503, detail="Model is not available yet. Please try again later.")
-        
-        # Create a DataFrame from the input data
-        input_data = pd.DataFrame([request.dict()])
-    
+        # Use the latest data from your dataframe for prediction (assuming it's already scaled)
+        # Replace this with the actual method you use to get the most recent data for prediction
+        df = pd.read_csv("data/new_df.csv")
+        df['datetime'] = pd.to_datetime(df['datetime'])
+        df['AQI'] = scaler.fit_transform(df[['AQI']])
 
-        # Make a prediction
-        prediction = model.predict(input_data)
-        
+        lookback = 48  # same as during training
+        last_data = df['AQI'].values[-lookback:]  # Get the last 48 hours of AQI data
+        last_data = last_data.reshape(-1, 1)
 
-        return PredictionResponse(pm2_5=float(prediction[0]))
+        # Function to predict future values
+        def predict_future(model, X_input, future_steps=168):
+            predictions = []
+            for _ in range(future_steps):
+                X_tensor = torch.tensor(X_input, dtype=torch.float32).to(device).unsqueeze(0)
+                with torch.no_grad():
+                    pred = model(X_tensor).cpu().item()
+                predictions.append(pred)
+                X_input = np.append(X_input[1:], pred).reshape(-1, 1)  # Shift the input window
+            return predictions
+
+        # Predict the next 168 hours (7 days)
+        predictions = predict_future(model, last_data, future_steps=168)
+        predicted_aqi = scaler.inverse_transform(np.array(predictions).reshape(-1, 1))
+
+        # Plot the prediction
+        plt.figure(figsize=(10, 6))
+        plt.plot(predicted_aqi, label="Predicted AQI for next 7 days", color='blue')
+        plt.xlabel('Hours')
+        plt.ylabel('AQI')
+        plt.title('AQI Forecast for Next 7 Days')
+        plt.legend()
+
+        # Save the plot as an image in base64 format
+        img_buffer = io.BytesIO()
+        plt.savefig(img_buffer, format='png')
+        img_buffer.seek(0)
+        plt.close()
+
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+
+        # Return the predicted values and the graph image
+        return {
+            "predictions": predicted_aqi.flatten().tolist(),
+            "image_base64": img_base64
+        }
 
     except Exception as e:
-        logger.error("Prediction error: %s", str(e))
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+
+
 
 
 '''
@@ -167,7 +217,7 @@ async def get_data():
         return {"error": "CSV file not found"}
     
 
-@app.post("/upload_model")
+'''@app.post("/upload_model")
 async def upload_model(model: UploadFile = File(...)):
     model_path = "models/model.joblib"
     
@@ -183,7 +233,7 @@ async def upload_model(model: UploadFile = File(...)):
     except Exception as e:
         return JSONResponse(status_code=500, content={"message": f"Error saving model: {str(e)}"})
     
-    return {"message": "Model uploaded successfully"}
+    return {"message": "Model uploaded successfully"}'''
 
 
 if __name__ == "__main__":
