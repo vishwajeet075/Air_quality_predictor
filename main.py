@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional , List
 from datetime import datetime
-import joblib
 import logging
 import torch
 from sklearn.preprocessing import MinMaxScaler
@@ -11,6 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import io
 import base64
+from utils import graph_utils
 
 
 from fastapi.responses import FileResponse
@@ -20,14 +20,7 @@ import os
 
 
 import pandas as pd
-from utils.graph_utils import (
-    generate_boxplot,
-    generate_heatmap,
-    generate_timeseries,
-    generate_scatterplot,
-    generate_histogram,
-    generate_lineplot
-)
+
 
 app = FastAPI()
 
@@ -40,42 +33,59 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load the dataset
-data = pd.read_csv('data/Pune_hist_pollution_data_30_sep_24.csv')
-data['datetime'] = pd.to_datetime(data['datetime'])
+
+
 
 class GraphRequest(BaseModel):
     graph_type: str
-    from_date: Optional[str] = None
-    to_date: Optional[str] = None
+    pollutant: Optional[str] = None
+    time_granularity: Optional[str] = 'daily'
+    year: Optional[int] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
 
-@app.post("/generate_graph")
+@app.post("/generate-graph")
 async def generate_graph(request: GraphRequest):
-    graph_type = request.graph_type.lower()
-    from_date = pd.to_datetime(request.from_date) if request.from_date else None
-    to_date = pd.to_datetime(request.to_date) if request.to_date else None
+    try:
+        # Load the appropriate dataset based on the graph type
+        if request.graph_type in ['pollutant', 'pollutant_heatmap', 'normalized_monthly_pollutants']:
+            df = pd.read_csv("data/Pune_hist_pollution_data_30_sep_24.csv")
+            df = graph_utils.preprocess_data(df, request.time_granularity)
+        elif request.graph_type in ['correlation_heatmap', 'subindex_correlation_heatmap', 'aqi_bucket_distribution', 'aqi_over_time']:
+            df = pd.read_csv("data/dataframeWithSubindexAndAQI.csv")
+            basic_df, subindex_df = graph_utils.preprocess_new_data(df)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid graph type")
 
-    # Filter data by date
-    filtered_data = data
-    if from_date and to_date:
-        filtered_data = data[(data['datetime'] >= from_date) & (data['datetime'] <= to_date)]
+        # Generate the appropriate graph based on the request
+        if request.graph_type == 'pollutant':
+            if not request.pollutant:
+                raise HTTPException(status_code=400, detail="Pollutant name is required for this graph type")
+            graph_data = graph_utils.plot_pollutant(df, request.pollutant, request.time_granularity)
+        elif request.graph_type == 'pollutant_heatmap':
+            if not request.pollutant or not request.year:
+                raise HTTPException(status_code=400, detail="Pollutant name and year are required for this graph type")
+            try:
+                graph_data = graph_utils.plot_pollutant_heatmap(df, request.pollutant, request.year)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        elif request.graph_type == 'normalized_monthly_pollutants':
+            graph_data = graph_utils.plot_normalized_monthly_pollutants(df, request.time_granularity)
+        elif request.graph_type == 'correlation_heatmap':
+            pollutants = ['pm2_5', 'pm10', 'no2', 'so2', 'co', 'o3', 'nh3']
+            graph_data = graph_utils.plot_correlation_heatmap(basic_df, pollutants)
+        elif request.graph_type == 'subindex_correlation_heatmap':
+            pollutants_subindex = ['PM2.5_SubIndex', 'PM10_SubIndex', 'NO2_SubIndex', 'SO2_SubIndex', 'CO_SubIndex', 'O3_SubIndex', 'NH3_SubIndex']
+            graph_data = graph_utils.plot_subindex_correlation_heatmap(subindex_df, pollutants_subindex)
+        elif request.graph_type == 'aqi_bucket_distribution':
+            graph_data = graph_utils.plot_aqi_bucket_distribution(basic_df)
+        elif request.graph_type == 'aqi_over_time':
+            graph_data = graph_utils.plot_aqi_over_time(basic_df, request.time_granularity)
 
-    if graph_type == "boxplot":
-        image_base64 = generate_boxplot(filtered_data)
-    elif graph_type == "heatmap":
-        image_base64 = generate_heatmap(filtered_data)
-    elif graph_type == "timeseries":
-        image_base64 = generate_timeseries(filtered_data)
-    elif graph_type == "scatterplot":
-        image_base64 = generate_scatterplot(filtered_data)
-    elif graph_type == "histogram":
-        image_base64 = generate_histogram(filtered_data)
-    elif graph_type == "lineplot":
-        image_base64 = generate_lineplot(filtered_data)
-    else:
-        raise HTTPException(status_code=400, detail="Invalid graph type")
-
-    return {"image": image_base64}
+        return {"graph_data": graph_data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 
 
 
