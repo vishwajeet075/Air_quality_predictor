@@ -8,6 +8,7 @@ import io
 import base64
 
 def preprocess_data(df, time_granularity='daily'):
+    df.replace(-9999.00000, np.nan, inplace=True)
     df['datetime'] = pd.to_datetime(df['datetime'])
     df.set_index('datetime', inplace=True)
     df = df.interpolate(method='time')
